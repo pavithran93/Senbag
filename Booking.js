@@ -12,6 +12,17 @@ $(function() {
 			$('.Others').hide();
 		}
 	})
+
+	$('.PhoneNumber').keyup(function() {
+		var inpValue = $(this).val();
+		var pattern = /^[0-9]*$/i
+		if (inpValue.length == 1 && inpValue != 8 && inpValue != 9) {
+			$(this).val("");
+		}
+		else if (!pattern.test(inpValue)) {
+			$(this).val("");
+		}
+	});
 });
 
 function InitPage() {
@@ -118,6 +129,15 @@ function onclickBookSlot() {
 		$('#errEmail').html("* Please enter your email");
 		$('#errEmail').show();
 		blnError = 1;
+	}
+	else {
+		var pattern = /^\b[A-Z0-9._%-]+@[A-Z0-9.-]+\.[A-Z]{2,4}\b$/i
+		if (!pattern.test($('#idEmail').val())) {
+			$('#idEmail').addClass("ControlError");
+			$('#errEmail').html("* Invalid email address");
+			$('#errEmail').show();
+			blnError = 1;
+		}
 	}
 	if ($('#idHomeTel').val() == "") {
 		$('#idHomeTel').addClass("ControlError");
