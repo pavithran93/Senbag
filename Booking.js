@@ -23,6 +23,18 @@ $(function() {
 			$(this).val("");
 		}
 	});
+
+
+	$('.LandlineNumber').keyup(function() {
+		var inpValue = $(this).val();
+		var pattern = /^[0-9]*$/i
+		if (inpValue.length == 1 && inpValue != 6) {
+			$(this).val("");
+		}
+		else if (!pattern.test(inpValue)) {
+			$(this).val("");
+		}
+	});
 });
 
 function InitPage() {
@@ -106,6 +118,15 @@ function onclickBookSlot() {
 		$('#errAddress').show();
 		blnError = 1;
 	}
+	else {
+		var pattern = /^[a-z A-Z0-9_]*$/i;
+		if (!pattern.test($('#idAddress').val())) {
+			$('#idAddress').addClass("ControlError");
+			$('#errAddress').html("* Invalid address");
+			$('#errAddress').show();
+			blnError = 1;
+		}
+	}
 	if ($('#idNRIC').val() == "") {
 		$('#idNRIC').addClass("ControlError");
 		$('#errNRIC').html("* Please enter your NRIC");
@@ -166,10 +187,63 @@ function onclickBookSlot() {
 	if (blnError == 1) {
 		return;
 	}
-	$('#mdlCustomerDetail').modal('hide');
 	//$('#btnBookingSlot').click();
 	tempStorage.SelectedDate = $('#idBookingDate').val();
+
 	BookSlot("Book Slot");
+}
+
+function ValidateBackToBack() {
+	var BookingDate = new Date(tempStorage.SelectedDate);
+	var ServerDates = tempStorage.SlotsInfo.LastFourBookingDates;
+
+	for (i = 0; i < tempStorage.UserSlots.length; i++) {
+		var SelectedDate = tempStorage.UserSlots[i]["Selected_Date"];
+		var blnMatch = false;
+		for (j = 0; j < ServerDates.length; j++) {
+			if (ServerDates[j] == SelectedDate) {
+				blnMatch = true;
+			}
+		}
+		if (blnMatch) {
+			continue;
+		}
+		else {
+			ServerDates.push(SelectedDate);
+		}
+	}
+
+	var blnValid = false;
+	var PreviousDate = new Date();
+	PreviousDate.setDate(BookingDate.getDate() - 1);
+	var BackToBackCount = 0;
+	while (blnValid == false) {
+		var PreviousDay = PreviousDate.getDate();
+		var blnMatch = false;
+		for (var i = 0; i < ServerDates.length; i++) {
+			var CurrentDate = new Date(ServerDates[i]);
+			var CurrentDateDay = CurrentDate.getDate();
+			if (CurrentDateDay == PreviousDay) {
+				blnMatch = true;
+			}
+		}
+		if (blnMatch == false) {
+			blnValid = true;
+		}
+		else {
+			if (BackToBackCount >= 4) {
+				blnValid = true;
+			}
+			else {
+				BackToBackCount++;
+				PreviousDate.setDate(PreviousDate.getDate() - 1);
+			}
+		}
+	}
+	if (BackToBackCount >= 4) {
+		return "Cannot book continuously for 4 days"
+	}
+	return "";
 }
 
 function onclickSlotc(Slot) {
@@ -177,10 +251,6 @@ function onclickSlotc(Slot) {
 	//    return (n.Selected_Date == tempStorage.SelectedDate)
 	//});
 
-	if (tempStorage.UserSlots.length >= 7) {
-		alert("Maximum slot selection reached");
-		return;
-	}
 	//Check Booked
 	var blnSlotExist = 0;
 	for (i = 0; i < tempStorage.BookedSlots.length; i++) {
@@ -203,6 +273,10 @@ function onclickSlotc(Slot) {
 			tempStorage.UserSlots.splice(i, 1);
 			break;
 		}
+	}
+	if (tempStorage.UserSlots.length >= 7) {
+		alert("Maximum slot selection reached");
+		return;
 	}
 	if (blnSlotExist == 0) {
 		var objUS = {};
@@ -289,6 +363,10 @@ function onclickSubmit() {
 		alert("Sorry, Maximum of seven slots allowed to select");
 		return;
 	}
+	if (parseInt(tempStorage.UserBookingTimesForMonth) > 2) {
+		alert("Sorry, Maximum two bookings per month");
+		return;
+	}
 	if ($('#chkAcknowledge').prop('checked') == false) {
 		alert("Please select the acknowledgement");
 		return;
@@ -304,20 +382,52 @@ function BookSlot(Action) {
 	if (Action == "Book Slot") {
 		strDate = $('#idBookingDate').val();
 	}
+
+	var BookingDate = new Date(tempStorage.SelectedDate);
+	var PreviousDate = new Date();
+	var strPreviousDates = "";
+	for (var i = 1; i <= 4; i++) {
+		PreviousDate.setDate(BookingDate.getDate() - 1);
+		if (strPreviousDates != "") {
+			strPreviousDates += "','";
+		}
+		else {
+			strPreviousDates += "'";
+		}
+		strPreviousDates += PreviousDate;
+	}
+	if (strPreviousDates != "") {
+		strPreviousDates += "'";
+	}
+
 	var Param = {};
 	Param.Action = "Fetch Slots";
 	Param.Date = strDate;
 	Param.NRIC = $('#idNRIC').val();
+	Param.PreviousDates = strPreviousDates;
 	$.ajax({
 		url: '/Test/AjaxServlet',
 		type: "POST",
 		data: 'BodyData=' + JSON.stringify(Param),
+		async: false,
 		success: function(response) {
 			var objResponse = response;
 			tempStorage.SlotsInfo.UserBookingCountForMonth = objResponse.UserBookingCountForMonth;
+			tempStorage.SlotsInfo.UserBookingTimesForMonth = objResponse.UserBookingTimesForMonth;
+			tempStorage.SlotsInfo.LastFourBookingDates = objResponse.LastFourBookingDates;
 			tempStorage.SlotsInfo.UserBookingForDate = objResponse.UserBookingForDate;
 			tempStorage.SlotsInfo.SelectedSlotByDate = objResponse.SelectedSlotByDate;
-			InitSlots();
+
+			//Validate back to back slot
+			var Message = ValidateBackToBack();
+			if (Message != "") {
+				OpenCustomerDetail();
+				alert(Message);
+			}
+			else {
+				InitSlots();
+				$('#mdlCustomerDetail').modal('hide');
+			}
 		},
 		error: function(errorMessage) {
 			alert("Ajax error");
@@ -343,7 +453,13 @@ function Submit() {
 	var SelectedDateList = [];
 	for (i = 0; i < tempStorage.UserSlots.length; i++) {
 		var SelectedDate = tempStorage.UserSlots[i]["Selected_Date"];
-		if ($.inArray(SelectedDate, SelectedDate) > -1) {
+		var blnMatch = false;
+		for (j = 0; j < SelectedDateList.length; j++) {
+			if (SelectedDateList[j] == SelectedDate) {
+				blnMatch = true;
+			}
+		}
+		if (blnMatch) {
 			continue;
 		}
 		SelectedDateList.push(SelectedDate);
@@ -352,11 +468,16 @@ function Submit() {
 		var SelectedDate = SelectedDateList[i];
 		var BookingData = {};
 		BookingData.BookingDate = SelectedDate;
+		var strBookingSlot = "";
 		for (j = 0; j < tempStorage.UserSlots.length; j++) {
 			if (SelectedDate == tempStorage.UserSlots[j]["Selected_Date"]) {
-				BookingData.BookingSlot = tempStorage.UserSlots[j]["Selected_Slot"];
+				if (strBookingSlot != "") {
+					strBookingSlot = strBookingSlot + ",";
+				}
+				strBookingSlot = strBookingSlot + tempStorage.UserSlots[j]["Selected_Slot"];
 			}
 		}
+		BookingData.BookingSlot = strBookingSlot;
 		Param.BookingData.push(BookingData);
 	}
 	console.log(Param.BookingData);
@@ -366,6 +487,7 @@ function Submit() {
 		data: 'BodyData=' + JSON.stringify(Param),
 		success: function(response) {
 			console.log(response);
+			location.reload();
 		},
 		error: function(errorMessage) {
 			alert("Ajax error");
